@@ -1,0 +1,80 @@
+---
+date: '2013-06-23'
+layout: post
+title: 电影爱好者的R函数
+categories: [数据抓取]
+tags: [数据抓取]
+---
+
+作为一个伪影迷，经常纠结一些电影该不该下，要不要看。毕竟吾生也有涯而片源无涯。还好可以去豆瓣一类的地方看看大家的评分择优录用。去豆瓣查分需要登录网站搜索再鼠标点点点，如果要查好几部电影就有点费事儿。其实可以用R写个函数，先抓取相应的网页，再筛选返回需要的分值。这样在R里头就可以批量查分了，恩，走起来。
+
+<!-- more -->
+
+{% highlight r %}
+library(RCurl)
+library(XML)
+movieScore <- function(x) {
+    stopifnot(is.character(x))
+    # 提交搜索豆瓣表单
+    search <- getForm("http://movie.douban.com/subject_search", search_text = x)
+    searchweb <- htmlParse(search)
+    # 解析搜索结果页面
+    resnodes <- getNodeSet(searchweb, "//div[@id='wrapper']//table[1]//a")
+    if (is.null(resnodes)) 
+        return(NULL) else resurl <- xmlGetAttr(resnodes[[1]], name = "href")
+    # 得到影片页面后第二次解析
+    resweb <- getURL(resurl, .encoding = "UTF-8")
+    content <- htmlParse(resweb, encoding = "UTF-8")
+    resnodes <- getNodeSet(content, "//div[@id='interest_sectl']//p[@class='rating_self clearfix']//strong")
+    namenodes <- getNodeSet(content, "//div[@id='content']//h1//span")
+    # 得到影片评分
+    score <- xmlValue(resnodes[[1]])
+    name <- xmlValue(namenodes[[1]])
+    return(list(name = name, score = score))
+}
+{% endhighlight %}
+
+
+看看天机这部大烂片多少分。
+
+```r{% highlight r %}
+movieScore("天机")
+{% endhighlight %}
+
+## $name
+## [1] "天机·富春山居图"
+## 
+## $score
+## [1] "2.9"
+
+
+
+抓网页比较慢，豆瓣为人民群众着想提供了`API`，我们也可以使用`API`来调取分数，函数也比较简单。
+
+
+```r{% highlight r %}
+library(RCurl)
+library(XML)
+library(RJSONIO)
+movieScoreapi <- function(x) {
+    api <- "https://api.douban.com/v2/movie/search?q={"
+    url <- paste(api, x, "}", sep = "")
+    res <- getURL(url)
+    reslist <- fromJSON(res)
+    name <- reslist$subjects[[1]]$title
+    score <- reslist$subjects[[1]]$rating$average
+    return(list(name = name, score = score))
+}
+movieScoreapi("僵尸世界大战")
+{% endhighlight %}
+
+
+## $name
+## [1] "僵尸世界大战"
+## 
+## $score
+## [1] 7.5
+
+
+
+有了这个查分函数，我们可以在R中批量查阅电影评分了。但是豆瓣对于频繁的访问会有限制，对于没有认证的API使用是每分钟10次，超过就会暂时封IP。对于网页抓取，肖楠在第六次R会议上有个很棒的演讲，有兴趣的同学可以去统计之都看看。
